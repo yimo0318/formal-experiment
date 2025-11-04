@@ -1,0 +1,454 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Attention & Memory Tasks — Formal</title>
+  <style>
+    :root { --maxw: 900px; }
+    * { box-sizing: border-box; }
+    body { font-family: system-ui, -apple-system, Segoe UI, Roboto, Helvetica, Arial, sans-serif; line-height: 1.5; margin: 0; background: #f7f7fb; color: #111; }
+    header { background: white; border-bottom: 1px solid #eee; position: sticky; top: 0; z-index: 10; }
+    header .wrap { max-width: var(--maxw); margin: 0 auto; padding: 12px 16px; display: flex; align-items: center; justify-content: space-between; gap: 12px; }
+    main { max-width: var(--maxw); margin: 24px auto; padding: 0 16px 48px; }
+    .card { background: white; border: 1px solid #eee; border-radius: 14px; padding: 18px; box-shadow: 0 10px 30px rgba(0,0,0,0.04); margin: 16px 0; }
+    h1 { font-size: 22px; margin: 6px 0; }
+    h2 { font-size: 20px; margin-top: 0; }
+    .row { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
+    label { font-weight: 600; font-size: 14px; }
+    input[type="text"], select { width: 100%; padding: 10px 12px; border-radius: 10px; border: 1px solid #ddd; }
+    button { padding: 10px 16px; border-radius: 12px; border: 1px solid #222; background: #111; color: #fff; cursor: pointer; font-weight: 700; }
+    button.secondary { background: #fff; color: #111; border-color: #ddd; }
+    button.action { background: #007bff; border-color: #007bff; font-size: 18px; padding: 14px 28px; }
+    button:disabled { opacity: .5; cursor: not-allowed; }
+    .center { text-align: center; }
+    .muted { color: #666; font-size: 13px; }
+    .progress { height: 8px; background: #eee; border-radius: 999px; overflow: hidden; }
+    .bar { height: 100%; background: #111; width: 0%; transition: width 200ms linear; }
+    .stim { font-size: 56px; font-weight: 800; margin: 28px 0 10px; text-align: center; }
+    .choices { display: flex; flex-wrap: wrap; justify-content: center; gap: 10px; margin: 12px 0; }
+    .hidden { display: none !important; }
+    .letter-grid { width: 100%; display:grid; grid-template-columns: repeat(18, 1fr); gap: 4px; align-items:center; justify-items:center; overflow:hidden; }
+    .letter-cell { font-weight: 800; line-height: 1; }
+    /* Corsi styles */
+    .corsi-grid { width:100%; max-width:360px; margin:16px auto 0; display:grid; grid-template-columns:repeat(3,1fr); gap:10px; }
+    .corsi-cell { width:100%; aspect-ratio:1/1; border-radius:12px; background:#e9eef6; border:1px solid #d5dbe7; box-shadow:inset 0 0 0 2px rgba(0,0,0,0.02); transition:transform .1s, background .1s; }
+    .corsi-cell.lit { background:#ffd54f; transform:scale(1.03); }
+    .corsi-cell.selected { background:#90caf9; box-shadow:0 0 0 2px rgba(0,0,0,.08) inset; }
+  </style>
+</head>
+<body>
+  <header>
+    <div class="wrap">
+      <div><strong>Formal Session</strong></div>
+      <div>
+        <button id="btnDownload" class="secondary" title="Download local CSV">Download CSV</button>
+      </div>
+    </div>
+  </header>
+
+  <main>
+    <section id="screen_welcome" class="card">
+      <h1>Attention & Memory Tasks — Formal</h1>
+      <p>Please enter your ID and assigned group to begin.</p>
+      <div class="row">
+        <div>
+          <label>Participant ID <span class="muted">(required)</span></label>
+          <input id="pid" type="text" placeholder="e.g., S001" />
+        </div>
+        <div>
+          <label>Group <span class="muted">(required)</span></label>
+          <select id="group">
+            <option value="">Select</option>
+            <option value="0">0</option>
+            <option value="1">1</option>
+          </select>
+        </div>
+      </div>
+      <p><label><input id="consent" type="checkbox" /> I understand this is the formal session and my responses will be recorded locally.</label></p>
+      <div class="center"><button id="btnStart" disabled>Start</button></div>
+    </section>
+
+    <section id="screen_instructions" class="card hidden">
+      <h2 id="inst_title">Instructions</h2>
+      <div id="inst_body"></div>
+      <div class="center"><button id="btnBeginTask">Begin</button></div>
+    </section>
+
+    <section id="screen_task" class="card hidden">
+      <div class="progress"><div id="progbar" class="bar"></div></div>
+      <div id="stimulus" class="stim"></div>
+      <div id="task_caption" class="center muted" style="margin-top:6px"></div>
+      <div id="choices" class="choices"></div>
+      <div id="action_area" class="center"></div>
+    </section>
+
+    <section id="screen_done" class="card hidden">
+      <h2>All tasks complete</h2>
+      <p>Thank you for participating. Please proceed to the questionnaire:</p>
+      <p><a id="survey_link" href="https://forms.gle/VPLHDNNSvYtb55mc9" target="_blank" rel="noopener">Open the questionnaire</a></p>
+      <p class="muted">You can also download your local CSV above.</p>
+<div id="final_status" class="center" style="margin-top:12px; font-weight:800;"></div>
+    </section>
+  </main>
+
+  <script>
+    // ------- Helpers & State -------
+    const $ = s => document.querySelector(s);
+    const shuffle = arr => arr.map(v=>[Math.random(),v]).sort((a,b)=>a[0]-b[0]).map(x=>x[1]);
+    const STATE = { pid:'', group:'', trialIndex:0, taskIndex:0, data:[], trials:[] };
+
+  // ====== Upload config & minimal uploader ======
+  const UPLOAD_URL = 'https://script.google.com/macros/s/AKfycbzKWpuZq5lEL4bKWb8wTYP30yiEwVC-Vsu5qWaAVRPqKVKSqrrnn9-jGl_kcOw9NuCm6w/exec';
+
+  // ===== Toast (English) =====
+  const toast = (() => {
+    const el = document.createElement('div');
+    el.id = 'upload_toast';
+    el.style.cssText = [
+      'position:fixed','left:50%','bottom:24px','transform:translateX(-50%)',
+      'padding:10px 14px','border-radius:10px','background:#111','color:#fff',
+      'font-weight:700','box-shadow:0 6px 24px rgba(0,0,0,.18)',
+      'opacity:0','pointer-events:none','transition:opacity .15s','z-index:9999'
+    ].join(';');
+    document.addEventListener('DOMContentLoaded', () => document.body.appendChild(el));
+    let t=null;
+    return (msg, ok=true) => {
+      el.textContent = msg || (ok ? 'Uploaded' : 'Upload failed');
+      el.style.background = ok ? '#111' : '#b00020';
+      el.style.opacity = '1';
+      clearTimeout(t);
+      t = setTimeout(()=>{ el.style.opacity='0'; }, 1000);
+    };
+  })();
+
+
+  async function uploadRow(row){
+    const payload = Object.assign({}, row);
+    const attempt = async () => {
+      const res = await fetch(UPLOAD_URL, { mode: 'no-cors',
+        method: 'POST',
+        headers: {},
+        body: JSON.stringify(payload)
+      });
+      let okJson = false;
+      try {
+        const j = await res.json();
+        okJson = j && j.ok === true;
+      } catch(_) { /* ignore parse errors */ }
+      if (!res.ok || !okJson) throw new Error('Bad response');
+    };
+    try{
+      await attempt();
+      // toast disabled per trial
+    }catch(e1){
+      try{
+        await new Promise(r=>setTimeout(r,300));
+        await attempt();
+        // toast disabled per trial
+      }catch(e2){
+        console.error('upload failed', e2);
+        // toast disabled per trial
+      }
+    }
+  }
+
+
+    // ------- CSV -------
+    function toCSV(rows){
+      if(!rows.length) return '';
+      const headers = Array.from(new Set(['pid','group', ...Object.keys(rows[0])]));
+      const esc=v=>{ const s=String(v??''); return /[",\n]/.test(s) ? ('"'+s.replace(/"/g,'""')+'"') : s; };
+      const out=[headers.join(',')];
+      for(const r of rows) out.push(headers.map(h=>esc(r[h])).join(','));
+      return out.join('\n');
+    }
+    function downloadCSV(){
+      const csv = toCSV(STATE.data);
+      const blob = new Blob([csv], {type:'text/csv;charset=utf-8;'});
+      const ts = new Date().toISOString().replace(/[:.]/g,'-');
+      const name = `formal_${STATE.pid||'PID'}_${ts}.csv`;
+      const a = document.createElement('a');
+      a.href = URL.createObjectURL(blob);
+      a.download = name;
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+    }
+    $('#btnDownload').addEventListener('click', downloadCSV);
+
+    // ------- Welcome -------
+    (function initWelcome(){
+      const pidInput=$('#pid'), groupSelect=$('#group'), consent=$('#consent'), btnStart=$('#btnStart');
+      const updateStart=()=>{ btnStart.disabled = !(consent.checked && pidInput.value.trim() && groupSelect.value!=='' ); };
+      updateStart();
+      [pidInput,groupSelect,consent].forEach(el=>el.addEventListener('input',updateStart));
+      consent.addEventListener('change',updateStart);
+      btnStart.addEventListener('click',()=>{ STATE.pid=pidInput.value.trim(); STATE.group=groupSelect.value; toInstructions(0); });
+    })();
+
+    // ------- Trial generators -------
+    const COLORS=[{name:'Red',css:'red'},{name:'Blue',css:'blue'},{name:'Green',css:'green'},{name:'Yellow',css:'gold'}];
+
+    function makeSearchTrials(n){
+      const trials=[]; const letters='ABCDEFGHIJKLMNOPQRSTUVWXYZ';
+      for(let i=0;i<n;i++){
+        const width=18, height=6; // *** 6 rows for formal ***
+        const target=Math.floor(Math.random()*3)+2; // 2–4
+        let cells=[]; for(let k=0;k<target;k++) cells.push('F');
+        while(cells.length<width*height){ const ch=letters[Math.floor(Math.random()*letters.length)]; cells.push(ch==='F'?'E':ch); }
+        trials.push({task:'Search', grid:shuffle(cells).join(''), answer:String(target)});
+      }
+      return shuffle(trials);
+    }
+
+    function makeStroopTrials(n){
+      const words=['RED','BLUE','GREEN','YELLOW']; const trials=[];
+      for(let i=0;i<n;i++){
+        const word=words[Math.floor(Math.random()*words.length)];
+        const theColor=COLORS[Math.floor(Math.random()*COLORS.length)];
+        trials.push({task:'Stroop', word, color:theColor.css, answer:theColor.name});
+      }
+      return shuffle(trials);
+    }
+
+    function makeGNGTrials(n){
+      const t=[]; for(let i=0;i<n;i++){ const d=Math.floor(Math.random()*9)+1; const go=d%2===1; t.push({task:'GoNoGo', digit:d, go, answer:go?'PRESS':'NO_PRESS'}); }
+      return shuffle(t);
+    }
+
+    function makeDigitSpanTrials(n){
+      const trials=[]; const randDigit=()=> String(Math.floor(Math.random()*10));
+      for(let r=0;r<n;r++){
+        const span = 3 + Math.floor(Math.random()*4); // 3–6 randomly
+        let seq='';
+        while(seq.length<span){ const d=randDigit(); if(seq.length===0 || seq[seq.length-1]!==d) seq+=d; }
+        trials.push({task:'DigitSpan', span, sequence:seq, answer:seq});
+      }
+      return shuffle(trials);
+    }
+
+    function makeCorsiTrials(n){
+      const trials=[]; const randIdx=()=> Math.floor(Math.random()*9);
+      for(let r=0;r<n;r++){
+        const span = 3 + Math.floor(Math.random()*4); // 3–6
+        const seq=[];
+        while(seq.length < span){
+          const d = randIdx();
+          // ensure no duplicate cells within a single sequence
+          if (!seq.includes(d)) seq.push(d);
+        }
+        trials.push({task:'Corsi', span, sequence:seq.join('-'), answer:seq.join('-')});
+      }
+      return shuffle(trials);
+    }
+
+    // ------- Presenters -------
+    async function presentSequence(seq, per=800, isi=300){
+      const stimEl = document.getElementById('stimulus');
+      for(const ch of seq){
+        stimEl.textContent = ch;
+        await new Promise(r=>setTimeout(r, per));
+        stimEl.textContent = '';
+        await new Promise(r=>setTimeout(r, isi));
+      }
+    }
+
+    async function playCorsiSequence(gridEl, seqStr, on=700, off=300){
+      const seq = seqStr.split('-').map(n=>parseInt(n,10));
+      const cells = Array.from(gridEl.querySelectorAll('.corsi-cell'));
+      for(const idx of seq){
+        cells[idx].classList.add('lit');
+        await new Promise(r=>setTimeout(r,on));
+        cells[idx].classList.remove('lit');
+        await new Promise(r=>setTimeout(r,off));
+      }
+    }
+
+    // ------- Screens & nav -------
+    const screens={ welcome:$('#screen_welcome'), inst:$('#screen_instructions'), task:$('#screen_task'), done:$('#screen_done') };
+    const instTitle=$('#inst_title'), instBody=$('#inst_body'), btnBeginTask=$('#btnBeginTask');
+    function showOnly(el){ Object.values(screens).forEach(s=>s.classList.add('hidden')); el.classList.remove('hidden'); }
+
+    function toInstructions(idx){
+      STATE.taskIndex=idx; STATE.trialIndex=0; let html='';
+      if(idx===0){
+        instTitle.textContent='Task 1 — Letter Search (5 trials)';
+        html='<div><strong>Count how many <span style="font-weight:900">F</span> letters appear in a grid of letters.</strong> Type the total number into the box and click Submit.<ul><li>Be both fast and accurate — every trial records your reaction time and correctness.</li><li>You cannot go back to change an answer after submitting.</li></ul></div>';
+        STATE.trials=makeSearchTrials(5);
+      } else if(idx===1){
+        instTitle.textContent='Task 2 — Stroop (24 trials)';
+        html='<div><strong>A color word appears on screen (e.g., <span style="color:red;">GREEN</span>).</strong> Click the button that matches the ink color, not the word meaning.<ul><li>Example: the word “GREEN” printed in red ink → correct answer is Red.</li><li>Respond as quickly and accurately as possible.</li></ul></div>';
+        STATE.trials=makeStroopTrials(24);
+      } else if(idx===2){
+        instTitle.textContent='Task 3 — Go / No-Go (32 trials)';
+        html='<div><strong>Click odd numbers (e.g., 1; odd), and do not click even numbers (e.g., 2; even). Try to respond as quickly and accurately as possible.</strong><ul><li>Clicking on an odd number records a PRESS with your reaction time.</li><li>With even numbers, doing nothing records a NO_PRESS after the time window.</li><li>Please focus on both speed and accuracy throughout.</li></ul></div>';
+        STATE.trials=makeGNGTrials(32);
+      } else if(idx===3){
+        instTitle.textContent='Task 4 — Digit Span (8 trials)';
+        html='<div><strong>A sequence of digits will appear one by one.</strong> Try to remember the whole sequence in the <u>same order</u>. When the sequence ends, type the digits you remember and submit.<ul><li>Sequences vary in length.</li><li>Each digit is shown briefly; the screen will clear between digits.</li><li>Accuracy is based on exact order match.</li></ul></div>';
+        STATE.trials=makeDigitSpanTrials(8);
+      } else { // idx===4
+        instTitle.textContent='Task 5 — Corsi Block (8 trials)';
+        html='<div><strong>Watch a sequence of highlighted squares in a 3×3 grid.</strong> After the sequence finishes, click the squares in the <u>same order</u> to recall it.<ul><li>Sequence length varies each trial.</li><li>You can clear selections if needed, then submit.</li></ul></div>';
+        STATE.trials=makeCorsiTrials(8);
+      }
+      instBody.innerHTML = '<div class="card">' + html + '</div>';
+      showOnly(screens.inst);
+    }
+
+    btnBeginTask.addEventListener('click',()=>{ showOnly(screens.task); nextTrial(); });
+
+    // ------- Runtime -------
+    const stim=$('#stimulus'), choicesDiv=$('#choices'), progbar=$('#progbar'), actionArea=$('#action_area'), caption=$('#task_caption');
+    function setCaptionFor(task){
+      if(!caption) return;
+      if(task==='Search') caption.innerHTML='<strong>Letter Search:</strong> count Fs';
+      else if(task==='Stroop') caption.innerHTML='<strong>Stroop:</strong> click ink color';
+      else if(task==='GoNoGo') caption.innerHTML='<strong>Go / No-Go:</strong> odd = click, even = wait';
+      else if(task==='DigitSpan') caption.innerHTML='<strong>Digit Span:</strong> remember and type digits in order';
+      else if(task==='Corsi') caption.innerHTML='<strong>Corsi:</strong> watch sequence, then click squares in order';
+    }
+
+    function updateProgress(){
+      const pct = STATE.trials.length ? (STATE.trialIndex/STATE.trials.length)*100 : 0;
+      if (progbar) progbar.style.width = pct.toFixed(1) + '%';
+    }
+
+    function afterTrialAdvance(){
+      // No correctness feedback in formal; short 250ms pause then continue
+      setTimeout(()=>{ STATE.trialIndex++; nextTrial(); }, 250);
+    }
+
+    async function nextTrial(){
+      stim.innerHTML=''; choicesDiv.innerHTML=''; actionArea.innerHTML=''; updateProgress();
+      if(STATE.trialIndex>=STATE.trials.length){
+        if(STATE.taskIndex<4){ toInstructions(STATE.taskIndex+1); }
+        else { showOnly(screens.done); verifyUpload(); }
+        return;
+      }
+      const t=STATE.trials[STATE.trialIndex];
+      setCaptionFor(t.task);
+
+      // --- Task 1: Letter Search ---
+      if(t.task==='Search'){
+        const grid=document.createElement('div'); grid.className='letter-grid';
+        for(const ch of t.grid){ const cell=document.createElement('div'); cell.className='letter-cell'; cell.textContent=ch; grid.appendChild(cell); }
+        stim.appendChild(grid);
+        actionArea.innerHTML='';
+        const input=document.createElement('input'); input.type='text'; input.placeholder='Enter number'; input.inputMode='numeric';
+        const submit=document.createElement('button'); submit.textContent='Submit';
+        actionArea.appendChild(input); actionArea.appendChild(submit);
+        function fit(){ const cols=18, gap=4; const w=grid.clientWidth || stim.clientWidth || 800; const cellW=(w - (cols-1)*gap)/cols; const fs=Math.max(12, Math.floor(cellW*0.7)); grid.querySelectorAll('.letter-cell').forEach(c=>{ c.style.fontSize=fs+'px'; }); }
+        fit(); if(window.ResizeObserver){ try{ new ResizeObserver(fit).observe(grid); }catch(_){ window.addEventListener('resize', fit, {passive:true}); } } else { window.addEventListener('resize', fit, {passive:true}); }
+        const start=performance.now();
+        submit.onclick=()=>{ const rt=Math.round(performance.now()-start); const resp=(input.value||'').trim(); const correct=resp===t.answer; record({task:'Search',stimulus:t.grid,answer:t.answer,response:resp,correct,rt}); afterTrialAdvance(); };
+        return;
+      }
+
+      // --- Task 2: Stroop ---
+      if(t.task==='Stroop'){
+        stim.textContent=t.word; stim.style.color=t.color; stim.style.fontSize='64px';
+        const trialStart = performance.now();
+        COLORS.forEach(c=>{ const b=document.createElement('button'); b.textContent=c.name; b.onclick=()=>{ const rt=Math.round(performance.now()-trialStart); const resp=c.name; const correct=resp===t.answer; record({task:'Stroop',stimulus:(t.word + '|' + t.color),answer:t.answer,response:resp,correct,rt}); afterTrialAdvance(); }; choicesDiv.appendChild(b); });
+        return;
+      }
+
+      // --- Task 3: Go/No-Go ---
+      if(t.task==='GoNoGo'){
+        stim.textContent=String(t.digit); stim.style.color='#111'; stim.style.fontSize='72px';
+        const btn=document.createElement('button'); btn.textContent='Press'; btn.className='action'; actionArea.appendChild(btn);
+        const trialStart=performance.now(); let responded=false;
+        btn.onclick=()=>{ if(responded) return; responded=true; const rt=Math.round(performance.now()-trialStart); record({task:'GoNoGo',stimulus:String(t.digit),answer:t.answer,response:'PRESS',correct:(t.go===true),rt}); afterTrialAdvance(); };
+        setTimeout(()=>{ if(!responded){ record({task:'GoNoGo',stimulus:String(t.digit),answer:t.answer,response:'NO_PRESS',correct:(t.go===false),rt:null}); afterTrialAdvance(); } },1500);
+        return;
+      }
+
+      // --- Task 4: Digit Span ---
+      if(t.task==='DigitSpan'){
+        const seq=t.sequence;
+        // ensure a short settle delay on first render to avoid 'instant flash'
+        await new Promise(r=>setTimeout(r, 400));
+        await presentSequence(seq, 800, 300);
+        actionArea.innerHTML='';
+        const input=document.createElement('input'); input.type='text'; input.placeholder='Type the digits in order'; input.pattern='[0-9]*'; input.inputMode='numeric';
+        const submit=document.createElement('button'); submit.textContent='Submit';
+        actionArea.appendChild(input); actionArea.appendChild(submit);
+        const start=performance.now();
+        submit.onclick=()=>{ const rt=Math.round(performance.now()-start); const resp=(input.value||'').trim(); const correct=resp===t.answer; record({task:'DigitSpan',stimulus:seq,answer:t.answer,response:resp,correct,rt, span:t.span}); afterTrialAdvance(); };
+        return;
+      }
+
+      // --- Task 5: Corsi ---
+      if(t.task==='Corsi'){
+        const grid=document.createElement('div'); grid.className='corsi-grid';
+        const cells=[]; for(let i=0;i<9;i++){ const d=document.createElement('div'); d.className='corsi-cell'; d.dataset.idx=i; grid.appendChild(d); cells.push(d); }
+        actionArea.appendChild(grid);
+        // During playback
+        stim.textContent='';
+        for(const c of cells) c.style.pointerEvents='none';
+        await playCorsiSequence(grid, t.sequence, 700, 300);
+        // After playback
+        stim.textContent='Start recall';
+        stim.style.fontSize='20px';
+        for(const c of cells) c.style.pointerEvents='auto';
+        const submit=document.createElement('button'); submit.textContent='Submit'; submit.className='action';
+        const clearBtn=document.createElement('button'); clearBtn.textContent='Clear'; clearBtn.className='secondary'; clearBtn.style.marginLeft='8px';
+        actionArea.appendChild(submit); actionArea.appendChild(clearBtn);
+        const clicks=[]; let firstTs=null; const recallStart=performance.now();
+        const onClick=e=>{
+          const idx = e.currentTarget.dataset.idx;
+          if(firstTs===null) firstTs=performance.now();
+          // prevent duplicate selections of the same cell within a trial
+          if (clicks.some(c => String(c.idx) === String(idx))) return;
+          clicks.push({idx:idx, rt: Math.round(performance.now()-firstTs)});
+          e.currentTarget.classList.add('selected');
+        };
+        cells.forEach(c=>c.addEventListener('click', onClick));
+        clearBtn.onclick=()=>{ clicks.length=0; firstTs=null; cells.forEach(c=>c.classList.remove('selected')); };
+        submit.onclick=()=>{ cells.forEach(c=>c.removeEventListener('click', onClick)); const respSeq = clicks.map(x=>x.idx).join('-'); const correct = respSeq===t.answer; const rtTotal = Math.round(performance.now() - recallStart); record({task:'Corsi', stimulus:t.sequence, answer:t.answer, response:respSeq, correct, rt_ms_total:rtTotal, span:t.span, click_rts: JSON.stringify(clicks.map(x=>x.rt))}); afterTrialAdvance(); };
+        return;
+      }
+    }
+
+    // Local record
+function record({task,stimulus,answer,response,correct,rt}){
+  const row = {
+    pid: STATE.pid,
+    group: STATE.group,
+    task,
+    trial: STATE.trialIndex + 1,
+    stimulus,
+    answer,
+    response,
+    correct: correct ? 1 : 0,
+    rt_ms: rt,
+    ts: new Date().toISOString()
+  };
+  STATE.data.push(row);
+  uploadRow(row);
+}
+
+    console.log('Formal ready.');
+
+  // Final verification on done screen: try to GET ?ping=1 via an Image to bypass CORS.
+  function verifyUpload(){
+    const statusEl = document.getElementById('final_status');
+    if(!statusEl){ return; }
+    statusEl.textContent = 'Verifying upload...';
+    // Use fetch with no-cors: if it resolves, treat as reachable/successful.
+    const url = UPLOAD_URL + '?ping=1&ts=' + Date.now();
+    fetch(url, { method: 'GET', mode: 'no-cors' })
+      .then(() => {
+        statusEl.textContent = 'Upload successful';
+        statusEl.style.color = '#0b8a00';
+      })
+      .catch(() => {
+        statusEl.textContent = 'Upload failed. Please check your internet or try again.';
+        statusEl.style.color = '#b00020';
+      });
+  }
+
+  </script>
+</body>
+</html>
